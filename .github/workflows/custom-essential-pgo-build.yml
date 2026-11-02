@@ -1,210 +1,98 @@
-name: custom-essential-pgo-build
-on: workflow_dispatch
-# on: push
+```yaml
+name: Build SVT-AV1 Windows x86-64
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
 
 jobs:
   tag:
-    runs-on: "ubuntu-latest"
+    runs-on: ubuntu-latest
     outputs:
-      repo: ${{ steps.generate-repo.outputs.repo }}
-      version: ${{ steps.generate-version.outputs.version }}
-      tag: ${{ steps.generate-tag.outputs.tag }}
-      sha: ${{ steps.generate-sha.outputs.sha }}
-    steps:
-    - id: generate-repo
-      run: echo repo=https://github.com/nekotrix/SVT-AV1-Essential.git >> "$GITHUB_OUTPUT"
-    - id: generate-version
-      run: echo version=v4.0.1-Essential >> "$GITHUB_OUTPUT"
-    - run: git clone --depth 1 ${{ steps.generate-repo.outputs.repo }} --branch ${{ steps.generate-version.outputs.version }} --single-branch .
-    - id: generate-tag
-      run: echo tag=pgo-build-$(git log -1 "--date=format:%F" "--format=%ad-%h") >> "$GITHUB_OUTPUT"
-    - id: generate-sha
-      run: echo sha=$(git log -1 "--format=%H") >> "$GITHUB_OUTPUT
+      repo: ${{ steps.info.outputs.repo }}
+      version: ${{ steps.info.outputs.version }}
+      tag: ${{ steps.info.outputs.tag }}
 
+    steps:
+      - name: Determine repository and version
+        id: info
+        shell: bash
+        env:
+          GH_REPOSITORY: ${{ github.repository }}
+          GH_REF: ${{ github.ref }}
+        run: |
+          echo "repo=https://github.com/Alliance-for-Open-Media/SVT-AV1.git" >> "$GITHUB_OUTPUT"
+          echo "tag=${GH_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          echo "version=${GH_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
 
   build-windows-x86-64:
-    needs: [tag, release]
-    runs-on: "windows-latest"
+    needs: tag
+    runs-on: windows-latest
+
     defaults:
       run:
         shell: msys2 {0}
+
     steps:
-    - run: git clone ${{ needs.tag.outputs.repo }} --branch ${{ needs.tag.outputs.version }} --single-branch .
-      shell: pwsh
+      - name: Set up MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+            tar
+            xz
+            make
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
 
-    - uses: Akatmks/build-svt-av1@v1
-      with:
-        ffms2: "true"
-        cmakeflags: "-DUSE_WEBM_IO=ON -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded"
+      - name: Clone SVT-AV1
+        shell: pwsh
+        run: |
+          git clone "${{ needs.tag.outputs.repo }}" --branch "${{ needs.tag.outputs.version }}" --single-branch .
 
-    - id: detect-icelake-server-znver5
-      run: ls BuildAction/icelake-server+znver5/static/ffms2/SvtAv1EncApp.exe
-      continue-on-error: true
-    - run: cd BuildAction/icelake-server+znver5/static/ffms2 && tar cJf Windows_x86-64_ffms2_icelake-server+znver5.tar.xz SvtAv1EncApp.exe
-      if: ${{ steps.detect-icelake-server-znver5.outcome != 'failure' }}
-    - uses: softprops/action-gh-release@v3
-      with:
-        tag_name: ${{ needs.tag.outputs.tag }}
-        files: BuildAction/icelake-server+znver5/static/ffms2/Windows_x86-64_ffms2_icelake-server+znver5.tar.xz
-      if: ${{ steps.detect-icelake-server-znver5.outcome != 'failure' }}
+      - name: Build SVT-AV1
+        uses: Akatmks/build-svt-av1@v1
+        with:
+          ffms2: "true"
+          cmakeflags: "-DUSE_WEBM_IO=ON -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded"
 
-    - id: detect-znver2
-      run: ls BuildAction/znver2/static/ffms2/SvtAv1EncApp.exe
-      continue-on-error: true
-    - run: cd BuildAction/znver2/static/ffms2 && tar cJf Windows_x86-64_ffms2_znver2.tar.xz SvtAv1EncApp.exe
-      if: ${{ steps.detect-znver2.outcome != 'failure' }}
-    - uses: softprops/action-gh-release@v3
-      with:
-        tag_name: ${{ needs.tag.outputs.tag }}
-        files: BuildAction/znver2/static/ffms2/Windows_x86-64_ffms2_znver2.tar.xz
-      if: ${{ steps.detect-znver2.outcome != 'failure' }}
-
-    - run: ls BuildAction/x86-64-v3+znver2/static/ffms2/SvtAv1EncApp.exe
-    - run: cd BuildAction/x86-64-v3+znver2/static/ffms2 && tar cJf Windows_x86-64_ffms2_x86-64-v3+znver2.tar.xz SvtAv1EncApp.exe
-    - uses: softprops/action-gh-release@v3
-      with:
-        tag_name: ${{ needs.tag.outputs.tag }}
-        files: BuildAction/x86-64-v3+znver2/static/ffms2/Windows_x86-64_ffms2_x86-64-v3+znver2.tar.xz
-
-
-  build-windows-arm64:
-    needs: [tag, release]
-    runs-on: "windows-11-arm"
-    defaults:
-      run:
+      - name: Package x86-64 build
         shell: msys2 {0}
-    steps:
-    - run: git clone ${{ needs.tag.outputs.repo }} --branch ${{ needs.tag.outputs.version }} --single-branch .
-      shell: pwsh
+        run: |
+          set -e
+          find BuildAction -name SvtAv1EncApp.exe
+          mkdir -p release
 
-    - uses: Akatmks/build-svt-av1@v1
-      with:
-        ffms2: "true"
-        cmakeflags: "-DUSE_WEBM_IO=ON -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded"
+          EXE="$(find BuildAction -path '*/x86-64-v3+znver2/static/ffms2/SvtAv1EncApp.exe' -print -quit)"
 
-    - run: ls BuildAction/armv8.7-a+crypto+sm4+sha3+fp16+sve+sve2+oryon-1/static/ffms2/SvtAv1EncApp.exe
-    - run: cd BuildAction/armv8.7-a+crypto+sm4+sha3+fp16+sve+sve2+oryon-1/static/ffms2 && tar cJf Windows_arm64_ffms2_armv8.7-a+crypto+sm4+sha3+fp16+sve+sve2+oryon-1.tar.xz SvtAv1EncApp.exe
-    - uses: softprops/action-gh-release@v3
-      with:
-        tag_name: ${{ needs.tag.outputs.tag }}
-        files: BuildAction/armv8.7-a+crypto+sm4+sha3+fp16+sve+sve2+oryon-1/static/ffms2/Windows_arm64_ffms2_armv8.7-a+crypto+sm4+sha3+fp16+sve+sve2+oryon-1.tar.xz
+          if [ -z "$EXE" ]; then
+            echo "Requested x86-64 build not found."
+            exit 1
+          fi
 
+          tar cJf release/Windows_x86-64_SvtAv1EncApp.tar.xz -C "$(dirname "$EXE")" SvtAv1EncApp.exe
 
-  build-linux-x86-64:
-    needs: [tag, release]
-    runs-on: "ubuntu-latest"
-    steps:
-    - run: git clone ${{ needs.tag.outputs.repo }} --branch ${{ needs.tag.outputs.version }} --single-branch .
+      - name: Upload build to GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.tag.outputs.tag }}
+          files: release/Windows_x86-64_SvtAv1EncApp.tar.xz
+          fail_on_unmatched_files: true
 
-    - uses: Akatmks/build-svt-av1@v1
-      with:
-        ffms2: "true"
-        cmakeflags: "-DUSE_WEBM_IO=ON"
+### Important notes
 
-    - id: detect-icelake-server-znver5
-      run: ls BuildAction/icelake-server+znver5/static/base/SvtAv1EncApp
-      continue-on-error: true
-    - run: cd BuildAction/icelake-server+znver5/static/base && tar cJf Linux_x86-64_icelake-server+znver5.tar.xz SvtAv1EncApp
-      if: ${{ steps.detect-icelake-server-znver5.outcome != 'failure' }}
-    - uses: softprops/action-gh-release@v3
-      with:
-        tag_name: ${{ needs.tag.outputs.tag }}
-        files: BuildAction/icelake-server+znver5/static/base/Linux_x86-64_icelake-server+znver5.tar.xz
-      if: ${{ steps.detect-icelake-server-znver5.outcome != 'failure' }}
+- **Source repository:** The workflow uses the official Alliance for Open Media SVT-AV1 repository.
+- **Release trigger:** Push a tag such as `v4.0.0` to trigger the workflow automatically. You can also run it manually using the Actions tab.
+- **CPU compatibility:** The `x86-64-v3+znver2` build requires a compatible CPU. It is not suitable for every x86-64 processor.
+- **SVT-AV1 PSY:** This workflow builds the source repository you specify. It does not automatically add SVT-AV1-PSY modifications.
+- **Build dependencies:** The `Akatmks/build-svt-av1@v1` action controls the actual build process. Verify that its toolchain is compatible with the selected MSYS2 environment.
 
-    - id: detect-znver2
-      run: ls BuildAction/znver2/static/base/SvtAv1EncApp
-      continue-on-error: true
-    - run: cd BuildAction/znver2/static/base && tar cJf Linux_x86-64_znver2.tar.xz SvtAv1EncApp
-      if: ${{ steps.detect-znver2.outcome != 'failure' }}
-    - uses: softprops/action-gh-release@v3
-      with:
-        tag_name: ${{ needs.tag.outputs.tag }}
-        files: BuildAction/znver2/static/base/Linux_x86-64_znver2.tar.xz
-      if: ${{ steps.detect-znver2.outcome != 'failure' }}
-    
-    - run: ls BuildAction/x86-64-v3+znver2/static/base/SvtAv1EncApp
-    - run: cd BuildAction/x86-64-v3+znver2/static/base && tar cJf Linux_x86-64_x86-64-v3+znver2.tar.xz SvtAv1EncApp
-    - uses: softprops/action-gh-release@v3
-      with:
-        tag_name: ${{ needs.tag.outputs.tag }}
-        files: BuildAction/x86-64-v3+znver2/static/base/Linux_x86-64_x86-64-v3+znver2.tar.xz
-  
-    - run: ls BuildAction/icelake-server+znver5/static/ffms2/SvtAv1EncApp
-      if: ${{ steps.detect-icelake-server-znver5.outcome != 'failure' }}
-    - run: cd BuildAction/icelake-server+znver5/static/ffms2 && tar cJf Linux_x86-64_ffms2_icelake-server+znver5.tar.xz SvtAv1EncApp
-      if: ${{ steps.detect-icelake-server-znver5.outcome != 'failure' }}
-    - uses: softprops/action-gh-release@v3
-      with:
-        tag_name: ${{ needs.tag.outputs.tag }}
-        files: BuildAction/icelake-server+znver5/static/ffms2/Linux_x86-64_ffms2_icelake-server+znver5.tar.xz
-      if: ${{ steps.detect-icelake-server-znver5.outcome != 'failure' }}
-
-    - run: ls BuildAction/znver2/static/ffms2/SvtAv1EncApp
-      if: ${{ steps.detect-znver2.outcome != 'failure' }}
-    - run: cd BuildAction/znver2/static/ffms2 && tar cJf Linux_x86-64_ffms2_znver2.tar.xz SvtAv1EncApp
-      if: ${{ steps.detect-znver2.outcome != 'failure' }}
-    - uses: softprops/action-gh-release@v3
-      with:
-        tag_name: ${{ needs.tag.outputs.tag }}
-        files: BuildAction/znver2/static/ffms2/Linux_x86-64_ffms2_znver2.tar.xz
-      if: ${{ steps.detect-znver2.outcome != 'failure' }}
-
-    - run: ls BuildAction/x86-64-v3+znver2/static/ffms2/SvtAv1EncApp
-    - run: cd BuildAction/x86-64-v3+znver2/static/ffms2 && tar cJf Linux_x86-64_ffms2_x86-64-v3+znver2.tar.xz SvtAv1EncApp
-    - uses: softprops/action-gh-release@v3
-      with:
-        tag_name: ${{ needs.tag.outputs.tag }}
-        files: BuildAction/x86-64-v3+znver2/static/ffms2/Linux_x86-64_ffms2_x86-64-v3+znver2.tar.xz
-
-
-  build-macos-arm64:
-    needs: [tag, release]
-    runs-on: "macos-latest"
-    steps:
-    - run: git clone ${{ needs.tag.outputs.repo }} --branch ${{ needs.tag.outputs.version }} --single-branch .
-
-    - uses: Akatmks/build-svt-av1@v1
-      with:
-        ffms2: "true"
-        cmakeflags: "-DUSE_WEBM_IO=ON"
-
-    - run: ls BuildAction/armv8.5-a+simd+crypto+apple-m3/static/base/SvtAv1EncApp
-    - run: cd BuildAction/armv8.5-a+simd+crypto+apple-m3/static/base && tar cJf macOS_arm64_armv8.5-a+simd+crypto+apple-m3.tar.xz SvtAv1EncApp
-    - uses: softprops/action-gh-release@v3
-      with:
-        tag_name: ${{ needs.tag.outputs.tag }}
-        files: BuildAction/armv8.5-a+simd+crypto+apple-m3/static/base/macOS_arm64_armv8.5-a+simd+crypto+apple-m3.tar.xz
-
-    - run: ls BuildAction/armv8.5-a+simd+crypto+apple-m3/static/ffms2/SvtAv1EncApp
-    - run: cd BuildAction/armv8.5-a+simd+crypto+apple-m3/static/ffms2 && tar cJf macOS_arm64_ffms2_armv8.5-a+simd+crypto+apple-m3.tar.xz SvtAv1EncApp
-    - uses: softprops/action-gh-release@v3
-      with:
-        tag_name: ${{ needs.tag.outputs.tag }}
-        files: BuildAction/armv8.5-a+simd+crypto+apple-m3/static/ffms2/macOS_arm64_ffms2_armv8.5-a+simd+crypto+apple-m3.tar.xz
-
-
-  build-macos-x86-64:
-    needs: [tag, release]
-    runs-on: "macos-26-intel"
-    steps:
-    - run: git clone ${{ needs.tag.outputs.repo }} --branch ${{ needs.tag.outputs.version }} --single-branch .
-
-    - uses: Akatmks/build-svt-av1@v1
-      with:
-        ffms2: "true"
-        cmakeflags: "-DUSE_WEBM_IO=ON"
-
-    - run: ls BuildAction/skylake/static/base/SvtAv1EncApp
-    - run: cd BuildAction/skylake/static/base && tar cJf macOS_x86-64_skylake.tar.xz SvtAv1EncApp
-    - uses: softprops/action-gh-release@v3
-      with:
-        tag_name: ${{ needs.tag.outputs.tag }}
-        files: BuildAction/skylake/static/base/macOS_x86-64_skylake.tar.xz
-
-    - run: ls BuildAction/skylake/static/ffms2/SvtAv1EncApp
-    - run: cd BuildAction/skylake/static/ffms2 && tar cJf macOS_x86-64_ffms2_skylake.tar.xz SvtAv1EncApp
-    - uses: softprops/action-gh-release@v3
-      with:
-        tag_name: ${{ needs.tag.outputs.tag }}
-        files: BuildAction/skylake/static/ffms2/macOS_x86-64_ffms2_skylake.tar.xz
+**One thing to consider:** If you want an executable that runs on most Windows 10/11 64-bit PCs, I recommend building a baseline x86-64 version rather than relying only on `x86-64-v3+znver2`.
