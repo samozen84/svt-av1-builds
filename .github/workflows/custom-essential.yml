@@ -1,95 +1,13 @@
 ```yaml
-name: Build SVT-AV1 Windows x86-64
+name: Custom Essential Build
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - "v*"
-
-permissions:
-  contents: write
 
 jobs:
-  tag:
+  test:
     runs-on: ubuntu-latest
-    outputs:
-      repo: ${{ steps.info.outputs.repo }}
-      version: ${{ steps.info.outputs.version }}
-      tag: ${{ steps.info.outputs.tag }}
-
     steps:
-      - name: Determine repository and version
-        id: info
-        shell: bash
-        env:
-          GH_REF: ${{ github.ref }}
-        run: |
-          echo "repo=https://github.com/Alliance-for-Open-Media/SVT-AV1.git" >> "$GITHUB_OUTPUT"
-          echo "tag=${GH_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
-          echo "version=${GH_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
-
-  build-windows-x86-64:
-    needs: tag
-    runs-on: windows-latest
-
-    defaults:
-      run:
-        shell: msys2 {0}
-
-    steps:
-      - name: Set up MSYS2
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: UCRT64
-          update: true
-          install: >-
-            git
-            tar
-            xz
-            make
-            mingw-w64-ucrt-x86_64-gcc
-            mingw-w64-ucrt-x86_64-cmake
-            mingw-w64-ucrt-x86_64-ninja
-
-      - name: Clone SVT-AV1
-        shell: pwsh
-        run: |
-          git clone "${{ needs.tag.outputs.repo }}" --branch "${{ needs.tag.outputs.version }}" --single-branch .
-
-      - name: Build SVT-AV1
-        uses: Akatmks/build-svt-av1@v1
-        with:
-          ffms2: "true"
-          cmakeflags: "-DUSE_WEBM_IO=ON -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded"
-
-      - name: Find executable
-        id: detect
-        shell: msys2 {0}
-        run: |
-          EXE="$(find BuildAction -path '*/x86-64-v3+znver2/static/ffms2/SvtAv1EncApp.exe' -print -quit)"
-
-          if [ -z "$EXE" ]; then
-            echo "Could not find the x86-64-v3+znver2 executable."
-            find BuildAction -name SvtAv1EncApp.exe
-            exit 1
-          fi
-
-          echo "exe=$EXE" >> "$GITHUB_OUTPUT"
-
-      - name: Package executable
-        shell: msys2 {0}
-        env:
-          EXE: ${{ steps.detect.outputs.exe }}
-        run: |
-          mkdir -p release
-          tar cJf release/Windows_x86-64_ffms2_znver2.tar.xz \
-            -C "$(dirname "$EXE")" SvtAv1EncApp.exe
-
-      - name: Upload build to GitHub Release
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ needs.tag.outputs.tag }}
-          files: release/Windows_x86-64_ffms2_znver2.tar.xz
-          fail_on_unmatched_files: true
+      - name: Test YAML parsing
+        run: echo "Workflow YAML is valid"
 ```
