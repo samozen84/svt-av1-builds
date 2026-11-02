@@ -1,4 +1,4 @@
-```yaml
+
 name: Custom Essential Build
 
 on:
@@ -10,4 +10,3 @@ jobs:
     steps:
       - name: Test YAML parsing
         run: echo "Workflow YAML is valid"
-```
