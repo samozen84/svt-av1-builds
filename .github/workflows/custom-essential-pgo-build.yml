@@ -32,7 +32,7 @@ jobs:
     - uses: softprops/action-gh-release@v3
       with:
         tag_name: ${{ needs.tag.outputs.tag }}
-        target_commitish: pgo-build-tags
+        target_commitish: master
         name: SVT-AV1-Essential ${{ needs.tag.outputs.version }}
         body: |
           Release `${{ needs.tag.outputs.version }}` | Commit `${{ needs.tag.outputs.sha }}` | Dolby Vision & HDR10+ | FFMS2 | WEBM  
