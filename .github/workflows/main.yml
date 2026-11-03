@@ -1,5 +1,4 @@
-name: mainline-pgo-build
-on:
+name: Build SVT-AV1 Windows x86-64
   schedule:
   - cron: "10 10 10,25 * *"
   workflow_dispatch:
