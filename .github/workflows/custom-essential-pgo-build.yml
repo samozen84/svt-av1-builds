@@ -1,4 +1,3 @@
-```yaml
 name: Build SVT-AV1 Windows x86-64
 
 on:
